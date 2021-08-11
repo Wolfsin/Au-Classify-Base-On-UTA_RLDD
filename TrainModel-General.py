@@ -8,8 +8,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 
 # choose Used Au
-useAu = ['04', '06', '07', '10', '17', '25', '45']
-# useAu = 'Full'
+# useAu = ['04', '06', '07', '10', '17', '25', '45']
+useAu = 'Full'
 
 # choose Au Model
 # useModel = 'C'
@@ -17,8 +17,8 @@ useModel = 'R'
 # useModel = 'mix'
 
 # choose pretreatmentMethod
-# preMethod = None
-preMethod = 'average'
+preMethod = None
+# preMethod = 'average'
 # preMethod = 'highMapping'
 
 # choose preParameter
@@ -29,8 +29,8 @@ path = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Group{0}/"
 outPath = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/"
 
 # choose Train&Test Set
-useForTrainSet = [1]
-useForTestSet = [3]
+useForTrainSet = [1,2,3,5]
+useForTestSet = [4]
 
 # Full Parameter
 Au_XX_R = [' AU01_r', ' AU02_r', ' AU04_r', ' AU05_r', ' AU06_r', ' AU07_r', ' AU09_r', ' AU10_r', ' AU12_r', ' AU14_r',
@@ -170,8 +170,8 @@ def Train(train, test):
     train_X, train_Y = DatasetToParameter(train)
     test_X, test_Y = DatasetToParameter(test)
 
-    RFC = RandomForestClassifier(criterion='gini', max_depth=50, min_samples_leaf=2, min_samples_split=2,
-                                 n_estimators=100, random_state=42)
+    RFC = RandomForestClassifier(criterion='gini', max_depth=40, min_samples_leaf=2, min_samples_split=2,
+                                 n_estimators=200, random_state=42)
     print('Start Training ' + useModel + ' Model')
     start = time.time()
     RFC.fit(train_X, train_Y)
@@ -223,19 +223,13 @@ if __name__ == "__main__":
     parameter = PickUpParameter()
     # print(parameter)
 
-    print("Generate Group Set")
-    for i in tqdm(range(1, 6)):
-        groupSet = concatByGroup(path.format(i), parameter)
-        groupList.append(groupSet)
-        # groupList.to_csv(os.path.join(outPath.format(i), 'Au_XX_{0}_TrainSet.csv'.format(useModel)), index=False)
-    
-    for j in tqdm(range(1, 6)):
-        if j in useForTrainSet:
-            trainSet.append(groupList[j - 1])
-        if j in useForTestSet:
-            testSet.append(groupList[j - 1])
-
     print("Generate Train&Test Set")
+    for i in tqdm(useGroup):
+        groupSet = concatByGroup(path.format(i), parameter)
+        if i in useForTrainSet:
+            trainSet.append(groupSet)
+        if i in useForTestSet:
+            testSet.append(groupSet)
 
     trainSet = pd.concat(trainSet, ignore_index=True)
     testSet = pd.concat(testSet, ignore_index=True)
@@ -246,6 +240,6 @@ if __name__ == "__main__":
     print('trainSet{0}:{1},testSet{2}:{3}'.format(useForTrainSet, trainSet.shape, useForTestSet, testSet.shape))
 
     # Training
-    trainModel = Train(trainSet, testSet)
-    # trainModel = TrainByGVSearch(trainSet, testSet)
+    # trainModel = Train(trainSet, testSet)
+    trainModel = TrainByGVSearch(trainSet, testSet)
     print(trainModel)
