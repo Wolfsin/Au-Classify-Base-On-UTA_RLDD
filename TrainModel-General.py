@@ -1,11 +1,16 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import EchoBot
 import time
 import os
+import seaborn as sns
 
 from tqdm import tqdm
+from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import confusion_matrix
 
 # choose Used Au
 # useAu = ['04', '06', '07', '10', '17', '25', '45']
@@ -29,8 +34,16 @@ path = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Group{0}/"
 outPath = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/"
 
 # choose Train&Test Set
-useForTrainSet = [1,2,3,5]
+useForTrainSet = [1, 2, 3, 5]
 useForTestSet = [4]
+
+# Frame Open Set
+useFrameOpenMode = True
+# useFrameOpenMode = False
+
+# Frame Open Parameter
+frameOpenSet = [1, 2, 3, 4, 5]
+splitRate = 0.8
 
 # Full Parameter
 Au_XX_R = [' AU01_r', ' AU02_r', ' AU04_r', ' AU05_r', ' AU06_r', ' AU07_r', ' AU09_r', ' AU10_r', ' AU12_r', ' AU14_r',
@@ -176,10 +189,17 @@ def Train(train, test):
     start = time.time()
     RFC.fit(train_X, train_Y)
     end = time.time()
-    print('trainSet score: {:.2%}'.format(RFC.score(train_X, train_Y)))
-    print('testSet score: {:.2%}'.format(RFC.score(test_X, test_Y)))
-    print('use Time:{0}'.format(end - start))
-    print('Complete training')
+    nowTime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    template = '{0} \n' \
+               'estimator: {1} \n' \
+               'trainSet score: {2:.2%}\n' \
+               'testSet score: {3:.2%}\n' \
+               'use Time:{4} \n' \
+               'Complete training'
+    msg = template.format(nowTime, RFC, RFC.score(train_X, train_Y), RFC.score(test_X, test_Y), end - start)
+    print(msg)
+    EchoBot.SendMsgToTelegram(msg)
+    DrawConfusionMatrix(RFC, test_X, test_Y, label=['0', '5', '10'])
 
     return RFC
 
@@ -202,44 +222,93 @@ def TrainByGVSearch(train, test):
     CLF.fit(train_X, train_Y)
     end = time.time()
     best_clf = CLF.best_estimator_
-    print("best parameters:")
-    print(CLF.best_params_)
-    print('trainSet score: {:.2%}'.format(best_clf.score(train_X, train_Y)))
-    print('testSet score: {:.2%}'.format(best_clf.score(test_X, test_Y)))
-    print('use Time:{0}'.format(end - start))
-    print('Complete training')
+    nowTime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    template = '{0} \n' \
+               'estimator: {1} \n' \
+               'best parameters: {2}' \
+               'trainSet score: {3:.2%}\n' \
+               'testSet score: {4:.2%}\n' \
+               'use Time:{5} \n' \
+               'Complete training'
+    msg = template.format(nowTime, best_clf, CLF.best_params_, best_clf.score(train_X, train_Y),
+                          best_clf.score(test_X, test_Y), end - start)
+    print(msg)
+    EchoBot.SendMsgToTelegram(msg)
 
-    return CLF.best_estimator_
+    return best_clf
 
 
-if __name__ == "__main__":
-    groupSet = None
+def GeneralTTSet():
     groupList = []
-    useGroup = useForTrainSet + useForTestSet
-
-    trainSet = []
-    testSet = []
-
+    TrainSet = []
+    TestSet = []
     parameter = PickUpParameter()
     # print(parameter)
 
     print("Generate Train&Test Set")
-    for i in tqdm(useGroup):
-        groupSet = concatByGroup(path.format(i), parameter)
-        if i in useForTrainSet:
-            trainSet.append(groupSet)
-        if i in useForTestSet:
-            testSet.append(groupSet)
+    if useFrameOpenMode:
+        useGroup = frameOpenSet
+        for i in tqdm(useGroup):
+            groupSet = concatByGroup(path.format(i), parameter)
+            groupList.append(groupSet)
+        groupList = pd.concat(groupList, ignore_index=True)
+        TrainSet, TestSet = train_test_split(groupList, train_size=splitRate, random_state=None, )
+    else:
+        useGroup = useForTrainSet + useForTestSet
+        for i in tqdm(useGroup):
+            groupSet = concatByGroup(path.format(i), parameter)
+            if i in useForTrainSet:
+                TrainSet.append(groupSet)
+            if i in useForTestSet:
+                TestSet.append(groupSet)
+        TrainSet = pd.concat(TrainSet, ignore_index=True)
+        TestSet = pd.concat(TestSet, ignore_index=True)
 
-    trainSet = pd.concat(trainSet, ignore_index=True)
-    testSet = pd.concat(testSet, ignore_index=True)
+    return TrainSet, TestSet
 
-    trainSet.to_csv(outPath + 'train.csv')
-    testSet.to_csv(outPath + 'test.csv')
-    print('UseAu:{0},UseModel:{1},PreMethod:{2},PreParameter:{3}'.format(useAu, useModel, preMethod, preParameter))
-    print('trainSet{0}:{1},testSet{2}:{3}'.format(useForTrainSet, trainSet.shape, useForTestSet, testSet.shape))
+
+def DrawConfusionMatrix(model, test_X, test_Y, label):
+    Y_pred = model.predict(test_X)
+    fig, ax = plt.subplots(constrained_layout=True)
+
+    # Output matrix: rows are real values and columns are predicted values
+    cm = confusion_matrix(test_Y, Y_pred)
+    cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+    sns.heatmap(cm_normalized, annot=True, cmap=plt.cm.binary, xticklabels=label, yticklabels=label,
+                annot_kws={"fontsize": 12})
+
+    xLocations = np.array(range(len(label)))
+    fig.set_size_inches(w=7, h=3)
+
+    ax.set_xlabel('True Label', fontsize=12)
+    ax.xaxis.set_ticks_position('top')
+    ax.xaxis.set_label_position('top')
+    ax.set_ylabel('Predicted Label', fontsize=12)
+
+    print('Confusion Matrix:')
+    print(cm_normalized)
+    EchoBot.SendPlotToTelegram(plt)
+    plt.show()
+
+
+if __name__ == "__main__":
+    trainSet, testSet = GeneralTTSet()
+
+    # trainSet.to_csv(outPath + 'train.csv')
+    # testSet.to_csv(outPath + 'test.csv')
+
+    print('UseAu:{0}\n'
+          'UseModel:{1}\n'
+          'PreMethod:{2}\n'
+          'PreParameter:{3}\n'
+          'FrameOpenMode:{4}'.format(useAu, useModel, preMethod, preParameter, useFrameOpenMode))
+    if useFrameOpenMode:
+        print('trainSet:{0},testSet:{1}'.format(trainSet.shape, testSet.shape))
+    else:
+        print('trainSet{0}:{1},testSet{2}:{3}'.format(useForTrainSet, trainSet.shape, useForTestSet, testSet.shape))
 
     # Training
-    # trainModel = Train(trainSet, testSet)
-    trainModel = TrainByGVSearch(trainSet, testSet)
+    trainModel = Train(trainSet, testSet)
+    # trainModel = TrainByGVSearch(trainSet, testSet)
     print(trainModel)
