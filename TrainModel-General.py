@@ -1,10 +1,11 @@
 import pandas as pd
 import numpy as np
+import seaborn as sns
 import matplotlib.pyplot as plt
 import EchoBot
+import joblib
 import time
 import os
-import seaborn as sns
 
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
@@ -13,8 +14,8 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import confusion_matrix
 
 # choose Used Au
-# useAu = ['04', '06', '07', '10', '17', '25', '45']
-useAu = 'Full'
+useAu = ['04', '06', '07', '10', '17', '25', '45']
+# useAu = 'Full'
 
 # choose Au Model
 # useModel = 'C'
@@ -22,30 +23,49 @@ useModel = 'R'
 # useModel = 'mix'
 
 # choose pretreatmentMethod
-preMethod = None
-# preMethod = 'average'
+# preMethod = None
+preMethod = 'average'
 # preMethod = 'highMapping'
 
 # choose preParameter
-preParameter = 5
+preParameter = 150
 
-# set Path
-path = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Group{0}/"
-outPath = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/"
+# Hyper parameter
+modelParameters = {
+    'criterion': 'gini',
+    'n_estimators': 5,
+    'max_depth': 10,
+    'min_samples_leaf': 50,
+    'min_samples_split': 2,
+    'random_state': 42
+}
 
 # choose Train&Test Set
-useForTrainSet = [1, 2, 3, 5]
+useForTrainSet = [1,3,2,5]
 useForTestSet = [4]
 
 # Frame Open Set
-useFrameOpenMode = True
-# useFrameOpenMode = False
+# useFrameOpenMode = True
+useFrameOpenMode = False
 
 # Frame Open Parameter
 frameOpenSet = [1, 2, 3, 4, 5]
 splitRate = 0.8
 
-# Full Parameter
+# Send To Echo
+useEchoBot = False
+# useEchoBot = True
+
+# Persistence
+dumpModel = True
+# dumpModel = False
+
+# set Path
+path = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Group{0}/"
+outPath = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/"
+modelPath = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/model/"
+
+# Full Au Parameter
 Au_XX_R = [' AU01_r', ' AU02_r', ' AU04_r', ' AU05_r', ' AU06_r', ' AU07_r', ' AU09_r', ' AU10_r', ' AU12_r', ' AU14_r',
            ' AU15_r', ' AU17_r', ' AU20_r', ' AU23_r', ' AU25_r', ' AU26_r', ' AU45_r']
 Au_XX_C = [' AU01_c', ' AU02_c', ' AU04_c', ' AU05_c', ' AU06_c', ' AU07_c', ' AU09_c', ' AU10_c', ' AU12_c', ' AU14_c',
@@ -183,8 +203,12 @@ def Train(train, test):
     train_X, train_Y = DatasetToParameter(train)
     test_X, test_Y = DatasetToParameter(test)
 
-    RFC = RandomForestClassifier(criterion='gini', max_depth=40, min_samples_leaf=2, min_samples_split=2,
-                                 n_estimators=200, random_state=42)
+    RFC = RandomForestClassifier(criterion=modelParameters.get('criterion'), max_depth=modelParameters.get('max_depth'),
+                                 min_samples_leaf=modelParameters.get('min_samples_leaf'),
+                                 min_samples_split=modelParameters.get('min_samples_split'),
+                                 n_estimators=modelParameters.get('n_estimators'),
+                                 random_state=modelParameters.get('random_state'))
+
     print('Start Training ' + useModel + ' Model')
     start = time.time()
     RFC.fit(train_X, train_Y)
@@ -198,7 +222,8 @@ def Train(train, test):
                'Complete training'
     msg = template.format(nowTime, RFC, RFC.score(train_X, train_Y), RFC.score(test_X, test_Y), end - start)
     print(msg)
-    EchoBot.SendMsgToTelegram(msg)
+    if useEchoBot:
+        EchoBot.SendMsgToTelegram(msg)
     DrawConfusionMatrix(RFC, test_X, test_Y, label=['0', '5', '10'])
 
     return RFC
@@ -225,7 +250,7 @@ def TrainByGVSearch(train, test):
     nowTime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     template = '{0} \n' \
                'estimator: {1} \n' \
-               'best parameters: {2}' \
+               'best parameters: {2}\n' \
                'trainSet score: {3:.2%}\n' \
                'testSet score: {4:.2%}\n' \
                'use Time:{5} \n' \
@@ -233,7 +258,9 @@ def TrainByGVSearch(train, test):
     msg = template.format(nowTime, best_clf, CLF.best_params_, best_clf.score(train_X, train_Y),
                           best_clf.score(test_X, test_Y), end - start)
     print(msg)
-    EchoBot.SendMsgToTelegram(msg)
+    if useEchoBot:
+        EchoBot.SendMsgToTelegram(msg)
+    DrawConfusionMatrix(best_clf, test_X, test_Y, label=['0', '5', '10'])
 
     return best_clf
 
@@ -278,7 +305,6 @@ def DrawConfusionMatrix(model, test_X, test_Y, label):
     sns.heatmap(cm_normalized, annot=True, cmap=plt.cm.binary, xticklabels=label, yticklabels=label,
                 annot_kws={"fontsize": 12})
 
-    xLocations = np.array(range(len(label)))
     fig.set_size_inches(w=7, h=3)
 
     ax.set_xlabel('True Label', fontsize=12)
@@ -288,8 +314,18 @@ def DrawConfusionMatrix(model, test_X, test_Y, label):
 
     print('Confusion Matrix:')
     print(cm_normalized)
-    EchoBot.SendPlotToTelegram(plt)
+    if useEchoBot:
+        EchoBot.SendPlotToTelegram(plt)
     plt.show()
+
+
+def SaveModel(model):
+    nowTime = time.strftime("%m%d%H%M%S", time.localtime())
+
+    fileName = "{0}_{1}_{2}_{3}_{4}_{5}.pkl".format(nowTime, useModel, preMethod, preParameter, useForTrainSet,
+                                                    useForTestSet)
+    print("out model in:"+modelPath + fileName)
+    joblib.dump(model, modelPath + fileName)
 
 
 if __name__ == "__main__":
@@ -311,4 +347,5 @@ if __name__ == "__main__":
     # Training
     trainModel = Train(trainSet, testSet)
     # trainModel = TrainByGVSearch(trainSet, testSet)
-    print(trainModel)
+    if dumpModel:
+        SaveModel(trainModel)
