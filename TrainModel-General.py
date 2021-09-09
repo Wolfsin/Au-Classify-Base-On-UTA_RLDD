@@ -24,24 +24,27 @@ useModel = 'R'
 
 # choose pretreatmentMethod
 # preMethod = None
-preMethod = 'average'
+# preMethod = 'average'
 # preMethod = 'highMapping'
+# preMethod = 'max'
+# preMethod = 'maxAverage'
+preMethod = 'maxAverageMin'
 
 # choose preParameter
-preParameter = 150
+preParameter = 5
 
 # Hyper parameter
 modelParameters = {
     'criterion': 'gini',
-    'n_estimators': 5,
-    'max_depth': 10,
-    'min_samples_leaf': 50,
+    'n_estimators': 200,
+    'max_depth': 40,
+    'min_samples_leaf': 2,
     'min_samples_split': 2,
     'random_state': 42
 }
 
 # choose Train&Test Set
-useForTrainSet = [1,3,2,5]
+useForTrainSet = [1, 2, 3, 5]
 useForTestSet = [4]
 
 # Frame Open Set
@@ -120,7 +123,12 @@ def concatByGroup(GroupPath, AuParameter):
                     data = PreAverage(data)
                 elif preMethod == 'highMapping':
                     data = PreHighMapping(data)
-
+                elif preMethod == 'max':
+                    data = PreMax(data)
+                elif preMethod == 'maxAverage':
+                    data = PreMaxAverage(data)
+                elif preMethod == 'maxAverageMin':
+                    data = PreMaxAverageMin(data)
                 dataSet = concatDF(dataSet, data)
                 print('folder:{0},size:{1},SetSize:{2}'.format(csvPath, data.shape, dataSet.shape))
     print('GroupPath:{0},Total Size:{1}'.format(GroupPath, dataSet.shape))
@@ -164,8 +172,31 @@ def PreAverage(originalData):
     return averageGroup
 
 
+def PreMax(originalData):
+    maxGroup = []
+    label = originalData['label']
+    originalData = originalData.drop(['label'], axis=1)
+    groupNum = originalData.shape[0] // preParameter
+
+    for i in range(groupNum):
+        first = i * preParameter
+        last = (i + 1) * preParameter
+        maxData = originalData[first:last].max(axis=0)
+        maxGroup.append(maxData)
+    # Handle the remainder that is not divisible
+    if originalData.shape[0] % preParameter != 0:
+        maxGroup.append(originalData[groupNum * preParameter:].max(axis=0))
+
+    maxGroup = pd.DataFrame(maxGroup)
+    label = label[:maxGroup.shape[0]]
+
+    maxGroup = pd.concat([maxGroup, label], axis=1)
+
+    return maxGroup
+
+
 def PreHighMapping(originalData):
-    averageGroup = []
+    highMappingGroup = []
     label = originalData['label']
     originalDataValues = originalData.drop(['label'], axis=1).values
     originalColumns = originalData.drop(['label'], axis=1).columns.values.tolist()
@@ -174,12 +205,12 @@ def PreHighMapping(originalData):
     for i in range(groupNum):
         first = i * preParameter
         last = (i + 1) * preParameter
-        averageData = originalDataValues[first:last].flatten()
-        averageGroup.append(averageData)
-    averageGroup = np.array(averageGroup)
+        highMappingData = originalDataValues[first:last].flatten()
+        highMappingGroup.append(highMappingData)
+    highMappingGroup = np.array(highMappingGroup)
 
     label = label[:groupNum]
-    averageGroup = np.column_stack((averageGroup, label))
+    highMappingGroup = np.column_stack((highMappingGroup, label))
 
     newColumns = []
     for i in range(preParameter):
@@ -187,10 +218,110 @@ def PreHighMapping(originalData):
         newColumns.extend(index)
     newColumns.append('label')
 
-    averageGroup = pd.DataFrame(averageGroup)
-    averageGroup.columns = newColumns
+    highMappingGroup = pd.DataFrame(highMappingGroup)
+    highMappingGroup.columns = newColumns
 
-    return averageGroup
+    return highMappingGroup
+
+
+def PreMaxAverage(originalData):
+    highMappingGroup = []
+    label = originalData['label']
+    originalDataValues = originalData.drop(['label'], axis=1).values
+    originalColumns = originalData.drop(['label'], axis=1).columns.values.tolist()
+    groupNum = originalData.shape[0] // preParameter
+
+    for i in range(groupNum):
+        first = i * preParameter
+        last = (i + 1) * preParameter
+        maxData = originalDataValues[first:last].max(axis=0)
+        averageData = originalDataValues[first:last].mean(axis=0)
+        highMappingData = np.hstack((maxData, averageData))
+        highMappingGroup.append(highMappingData)
+
+    # Handle the remainder that is not divisible
+    if originalData.shape[0] % preParameter != 0:
+        highMappingGroup.append(np.hstack((originalDataValues[groupNum * preParameter:].max(axis=0),
+                                           originalDataValues[groupNum * preParameter:].mean(axis=0))))
+
+    highMappingGroup = pd.DataFrame(highMappingGroup)
+    label = label[:highMappingGroup.shape[0]]
+
+    if useModel == 'C':
+        highMappingGroup[highMappingGroup >= 0.5] = 1
+        highMappingGroup[highMappingGroup < 0.5] = 0
+    elif useModel == 'mix':
+        if useAu == 'Full':
+            dividingLine = len(Au_XX_C)
+        else:
+            dividingLine = len(useAu)
+        # Data that does not require operation.
+        noOperationData = highMappingGroup.iloc[:, :-dividingLine]
+        operationData = highMappingGroup.iloc[:, -dividingLine:]
+        operationData = operationData.where(operationData >= 0.5, 0)
+        operationData = operationData.where(operationData < 0.5, 1)
+        highMappingGroup = pd.concat([noOperationData, operationData], axis=1)
+
+    highMappingGroup = pd.concat([highMappingGroup, label], axis=1)
+    newColumns = []
+    for i in ["max", "average"]:
+        index = [j + '_' + i for j in originalColumns]
+        newColumns.extend(index)
+    newColumns.append('label')
+
+    highMappingGroup.columns = newColumns
+
+    return highMappingGroup
+
+
+def PreMaxAverageMin(originalData):
+    highMappingGroup = []
+    label = originalData['label']
+    originalDataValues = originalData.drop(['label'], axis=1).values
+    originalColumns = originalData.drop(['label'], axis=1).columns.values.tolist()
+    groupNum = originalData.shape[0] // preParameter
+
+    for i in range(groupNum):
+        first = i * preParameter
+        last = (i + 1) * preParameter
+        maxData = originalDataValues[first:last].max(axis=0)
+        averageData = originalDataValues[first:last].mean(axis=0)
+        if useModel == 'C':
+            averageData[averageData >= 0.5] = 1
+            averageData[averageData < 0.5] = 0
+        elif useModel == 'mix':
+            if useAu == 'Full':
+                dividingLine = len(Au_XX_R)
+            else:
+                dividingLine = len(useAu)
+            operationData = averageData[dividingLine:]
+            noOperationData = averageData[:dividingLine]
+            operationData[operationData >= 0.5] = 1
+            operationData[operationData < 0.5] = 0
+            averageData = np.hstack((noOperationData, operationData))
+        minData = originalDataValues[first:last].min(axis=0)
+        highMappingData = np.hstack((maxData, averageData, minData))
+        highMappingGroup.append(highMappingData)
+
+    # Handle the remainder that is not divisible
+    if originalData.shape[0] % preParameter != 0:
+        highMappingGroup.append(np.hstack((originalDataValues[groupNum * preParameter:].max(axis=0),
+                                           originalDataValues[groupNum * preParameter:].mean(axis=0),
+                                           originalDataValues[groupNum * preParameter:].min(axis=0))))
+
+    highMappingGroup = pd.DataFrame(highMappingGroup)
+    label = label[:highMappingGroup.shape[0]]
+
+    highMappingGroup = pd.concat([highMappingGroup, label], axis=1)
+    newColumns = []
+    for i in ["max", "average", "min"]:
+        index = [j + '_' + i for j in originalColumns]
+        newColumns.extend(index)
+    newColumns.append('label')
+
+    highMappingGroup.columns = newColumns
+
+    return highMappingGroup
 
 
 def DatasetToParameter(dataSet: pd.DataFrame):
@@ -324,7 +455,7 @@ def SaveModel(model):
 
     fileName = "{0}_{1}_{2}_{3}_{4}_{5}.pkl".format(nowTime, useModel, preMethod, preParameter, useForTrainSet,
                                                     useForTestSet)
-    print("out model in:"+modelPath + fileName)
+    print("out model in:" + modelPath + fileName)
     joblib.dump(model, modelPath + fileName)
 
 
@@ -345,7 +476,7 @@ if __name__ == "__main__":
         print('trainSet{0}:{1},testSet{2}:{3}'.format(useForTrainSet, trainSet.shape, useForTestSet, testSet.shape))
 
     # Training
-    trainModel = Train(trainSet, testSet)
-    # trainModel = TrainByGVSearch(trainSet, testSet)
+    # trainModel = Train(trainSet, testSet)
+    trainModel = TrainByGVSearch(trainSet, testSet)
     if dumpModel:
         SaveModel(trainModel)
