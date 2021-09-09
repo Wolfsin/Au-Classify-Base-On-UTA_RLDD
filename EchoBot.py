@@ -1,11 +1,11 @@
 import telegram
 import os
 
-token = "1910596977:AAFMPBYTwTXXJXqwkXfW5qgVk32aLmfOtRU"
+token = "Your Token"
 bot = telegram.Bot(token=token)
 
 
-def SendMsgToTelegram(msg, Toid='388707586'):
+def SendMsgToTelegram(msg, Toid='Your ID'):
     try:
         bot.send_message(chat_id=Toid, text=msg)
         return True
@@ -14,7 +14,7 @@ def SendMsgToTelegram(msg, Toid='388707586'):
         return False
 
 
-def SendPlotToTelegram(plt, Toid='388707586'):
+def SendPlotToTelegram(plt, Toid='Your ID'):
     try:
         tmpPath = 'tmp.png'
         plt.savefig(tmpPath)
