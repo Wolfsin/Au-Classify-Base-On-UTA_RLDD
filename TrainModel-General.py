@@ -14,8 +14,8 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import confusion_matrix
 
 # choose Used Au
-useAu = ['04', '06', '07', '10', '17', '25', '45']
-# useAu = 'Full'
+# useAu = ['04', '06', '07', '10', '17', '25', '45']
+useAu = 'Full'
 
 # choose Au Model
 # useModel = 'C'
@@ -23,12 +23,12 @@ useModel = 'R'
 # useModel = 'mix'
 
 # choose pretreatmentMethod
-# preMethod = None
+preMethod = None
 # preMethod = 'average'
 # preMethod = 'highMapping'
 # preMethod = 'max'
 # preMethod = 'maxAverage'
-preMethod = 'maxAverageMin'
+# preMethod = 'maxAverageMin'
 
 # choose preParameter
 preParameter = 5
@@ -48,12 +48,16 @@ useForTrainSet = [1, 2, 3, 5]
 useForTestSet = [4]
 
 # Frame Open Set
-# useFrameOpenMode = True
-useFrameOpenMode = False
+useFrameOpenMode = True
+# useFrameOpenMode = False
 
 # Frame Open Parameter
 frameOpenSet = [1, 2, 3, 4, 5]
-splitRate = 0.8
+# [train,drop,test]
+splitRate = [7, 2, 1]
+# splitMethod = 'positive'
+# splitMethod = 'reverse'
+splitMethod = 'random'
 
 # Send To Echo
 useEchoBot = False
@@ -132,7 +136,39 @@ def concatByGroup(GroupPath, AuParameter):
                 dataSet = concatDF(dataSet, data)
                 print('folder:{0},size:{1},SetSize:{2}'.format(csvPath, data.shape, dataSet.shape))
     print('GroupPath:{0},Total Size:{1}'.format(GroupPath, dataSet.shape))
+
     return dataSet
+
+
+def GeneralTTSetByGroup(GroupPath, AuParameter):
+    TrainSet = None
+    TestSet = None
+
+    folderList = [folder for folder in os.listdir(GroupPath) if os.path.isdir(os.path.join(GroupPath, folder))]
+    for folder in folderList:
+        samplePath = GroupPath + folder
+        fileList = os.listdir(samplePath)
+        for file in fileList:
+            if os.path.splitext(file)[1] == '.csv' and "mix" in os.path.splitext(file)[0]:
+                csvPath = samplePath + '/' + file
+                data = pd.read_csv(csvPath)[AuParameter]
+                if preMethod == 'average':
+                    data = PreAverage(data)
+                if splitMethod == 'positive':
+                    trainData = data[:data.shape[0] * splitRate[0] // 10]
+                    testData = data[-data.shape[0] * splitRate[2] // 10:]
+                elif splitMethod == 'reverse':
+                    trainData = data[-data.shape[0] * splitRate[0] // 10:]
+                    testData = data[:data.shape[0] * splitRate[2] // 10]
+                elif splitMethod == 'random':
+                    data = data.sample(frac=1,random_state=42)
+                    trainData = data[:data.shape[0] * splitRate[0] // 10]
+                    testData = data[-data.shape[0] * splitRate[2] // 10:]
+                TrainSet = concatDF(TrainSet, trainData)
+                TestSet = concatDF(TestSet, testData)
+    print('GroupPath:{0},Train Size:{1},Test Size:{2}'.format(GroupPath, TrainSet.shape, TestSet.shape))
+
+    return TrainSet, TestSet
 
 
 def PreAverage(originalData):
@@ -397,7 +433,6 @@ def TrainByGVSearch(train, test):
 
 
 def GeneralTTSet():
-    groupList = []
     TrainSet = []
     TestSet = []
     parameter = PickUpParameter()
@@ -407,10 +442,11 @@ def GeneralTTSet():
     if useFrameOpenMode:
         useGroup = frameOpenSet
         for i in tqdm(useGroup):
-            groupSet = concatByGroup(path.format(i), parameter)
-            groupList.append(groupSet)
-        groupList = pd.concat(groupList, ignore_index=True)
-        TrainSet, TestSet = train_test_split(groupList, train_size=splitRate, random_state=None, )
+            TrainData, TestData = GeneralTTSetByGroup(path.format(i), parameter)
+            TrainSet.append(TrainData)
+            TestSet.append(TestData)
+        TrainSet = pd.concat(TrainSet, ignore_index=True)
+        TestSet = pd.concat(TestSet, ignore_index=True)
     else:
         useGroup = useForTrainSet + useForTestSet
         for i in tqdm(useGroup):
