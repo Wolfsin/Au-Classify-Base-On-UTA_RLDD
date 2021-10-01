@@ -14,8 +14,8 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import confusion_matrix
 
 # choose Used Au
-# useAu = ['04', '06', '07', '10', '17', '25', '45']
-useAu = 'Full'
+useAu = ['04', '06', '07', '10', '17', '25', '45']
+# useAu = 'Full'
 
 # choose Au Model
 # useModel = 'C'
@@ -23,15 +23,16 @@ useModel = 'R'
 # useModel = 'mix'
 
 # choose pretreatmentMethod
-preMethod = None
+# preMethod = None
 # preMethod = 'average'
-# preMethod = 'highMapping'
+preMethod = 'highMapping'
+# preMethod = 'highMappingV2'
 # preMethod = 'max'
 # preMethod = 'maxAverage'
 # preMethod = 'maxAverageMin'
 
 # choose preParameter
-preParameter = 5
+preParameter = 150
 
 # Hyper parameter
 modelParameters = {
@@ -55,22 +56,19 @@ useFrameOpenMode = True
 frameOpenSet = [1, 2, 3, 4, 5]
 # [train,drop,test]
 splitRate = [7, 2, 1]
-# splitMethod = 'positive'
-# splitMethod = 'reverse'
-splitMethod = 'random'
 
 # Send To Echo
 useEchoBot = False
 # useEchoBot = True
 
 # Persistence
-dumpModel = True
-# dumpModel = False
+# dumpModel = True
+dumpModel = False
 
 # set Path
 path = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Group{0}/"
 outPath = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/"
-modelPath = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/model/"
+modelPath = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/model/FrameOpen/"
 
 # Full Au Parameter
 Au_XX_R = [' AU01_r', ' AU02_r', ' AU04_r', ' AU05_r', ' AU06_r', ' AU07_r', ' AU09_r', ' AU10_r', ' AU12_r', ' AU14_r',
@@ -85,8 +83,8 @@ def PickUpParameter():
     template = ' AU{0}_{1}'
 
     if useAu == 'Full':
-        cList = Au_XX_C
-        rList = Au_XX_R
+        cList = Au_XX_C.copy()
+        rList = Au_XX_R.copy()
     else:
         for i in useAu:
             cList.append(template.format(i, 'c'))
@@ -154,6 +152,16 @@ def GeneralTTSetByGroup(GroupPath, AuParameter):
                 data = pd.read_csv(csvPath)[AuParameter]
                 if preMethod == 'average':
                     data = PreAverage(data)
+                elif preMethod == 'highMapping':
+                    data = PreHighMapping(data)
+                elif preMethod == 'max':
+                    data = PreMax(data)
+                elif preMethod == 'maxAverage':
+                    data = PreMaxAverage(data)
+                elif preMethod == 'maxAverageMin':
+                    data = PreMaxAverageMin(data)
+                elif preMethod == 'highMappingV2':
+                    data = PreHighMappingV2(data)
                 if splitMethod == 'positive':
                     trainData = data[:data.shape[0] * splitRate[0] // 10]
                     testData = data[-data.shape[0] * splitRate[2] // 10:]
@@ -161,13 +169,12 @@ def GeneralTTSetByGroup(GroupPath, AuParameter):
                     trainData = data[-data.shape[0] * splitRate[0] // 10:]
                     testData = data[:data.shape[0] * splitRate[2] // 10]
                 elif splitMethod == 'random':
-                    data = data.sample(frac=1,random_state=42)
+                    data = data.sample(frac=1, random_state=42)
                     trainData = data[:data.shape[0] * splitRate[0] // 10]
                     testData = data[-data.shape[0] * splitRate[2] // 10:]
                 TrainSet = concatDF(TrainSet, trainData)
                 TestSet = concatDF(TestSet, testData)
     print('GroupPath:{0},Train Size:{1},Test Size:{2}'.format(GroupPath, TrainSet.shape, TestSet.shape))
-
     return TrainSet, TestSet
 
 
@@ -250,6 +257,42 @@ def PreHighMapping(originalData):
 
     newColumns = []
     for i in range(preParameter):
+        index = [j + '_' + str(i + 1) for j in originalColumns]
+        newColumns.extend(index)
+    newColumns.append('label')
+
+    highMappingGroup = pd.DataFrame(highMappingGroup)
+    highMappingGroup.columns = newColumns
+
+    return highMappingGroup
+
+
+def PreHighMappingV2(originalData):
+    highMappingGroup = []
+    label = originalData['label']
+    originalDataValues = originalData.drop(['label'], axis=1).values
+    originalColumns = originalData.drop(['label'], axis=1).columns.values.tolist()
+    groupNum = originalData.shape[0] // preParameter
+
+    initialData = np.zeros((1,originalDataValues.shape[1] * preParameter))
+
+    for i in range(groupNum):
+        first = i * preParameter
+        last = (i + 1) * preParameter
+        nowData = originalDataValues[first:last].flatten()
+        if i == 0:
+            highMappingData = np.append(initialData, nowData)
+        else:
+            highMappingData = np.append(preData, nowData)
+        preData = nowData
+        highMappingGroup.append(highMappingData)
+    highMappingGroup = np.array(highMappingGroup)
+
+    label = label[:groupNum]
+    highMappingGroup = np.column_stack((highMappingGroup, label))
+
+    newColumns = []
+    for i in range(preParameter * 2):
         index = [j + '_' + str(i + 1) for j in originalColumns]
         newColumns.extend(index)
     newColumns.append('label')
@@ -483,7 +526,8 @@ def DrawConfusionMatrix(model, test_X, test_Y, label):
     print(cm_normalized)
     if useEchoBot:
         EchoBot.SendPlotToTelegram(plt)
-    plt.show()
+    plt.savefig(outPath + 'tmp_{0}.png'.format(splitMethod))
+    # plt.show()
 
 
 def SaveModel(model):
@@ -496,23 +540,32 @@ def SaveModel(model):
 
 
 if __name__ == "__main__":
-    trainSet, testSet = GeneralTTSet()
-
-    # trainSet.to_csv(outPath + 'train.csv')
-    # testSet.to_csv(outPath + 'test.csv')
-
-    print('UseAu:{0}\n'
-          'UseModel:{1}\n'
-          'PreMethod:{2}\n'
-          'PreParameter:{3}\n'
-          'FrameOpenMode:{4}'.format(useAu, useModel, preMethod, preParameter, useFrameOpenMode))
     if useFrameOpenMode:
-        print('trainSet:{0},testSet:{1}'.format(trainSet.shape, testSet.shape))
+        for splitMethod in ['positive', 'reverse', 'random']:
+            trainSet, testSet = GeneralTTSet()
+            print('UseAu:{0}\n'
+                  'UseModel:{1}\n'
+                  'PreMethod:{2}\n'
+                  'PreParameter:{3}\n'
+                  'FrameOpenMode:{4}\n'
+                  'SplitMethod:{5}'.format(useAu, useModel, preMethod, preParameter, useFrameOpenMode, splitMethod))
+            print('trainSet:{0},testSet:{1}'.format(trainSet.shape, testSet.shape))
+            trainModel = Train(trainSet, testSet)
     else:
+        trainSet, testSet = GeneralTTSet()
+
+        # trainSet.to_csv(outPath + 'train.csv')
+        # testSet.to_csv(outPath + 'test.csv')
+
+        print('UseAu:{0}\n'
+              'UseModel:{1}\n'
+              'PreMethod:{2}\n'
+              'PreParameter:{3}\n'
+              'FrameOpenMode:{4}'.format(useAu, useModel, preMethod, preParameter, useFrameOpenMode))
         print('trainSet{0}:{1},testSet{2}:{3}'.format(useForTrainSet, trainSet.shape, useForTestSet, testSet.shape))
 
-    # Training
-    # trainModel = Train(trainSet, testSet)
-    trainModel = TrainByGVSearch(trainSet, testSet)
+        # Training
+        trainModel = Train(trainSet, testSet)
+        # trainModel = TrainByGVSearch(trainSet, testSet)
     if dumpModel:
         SaveModel(trainModel)
