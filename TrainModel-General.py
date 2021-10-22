@@ -9,38 +9,48 @@ import os
 
 from tqdm import tqdm
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import Normalizer
+from sklearn.preprocessing import StandardScaler
 from pandas.testing import assert_frame_equal
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
 
 # choose Used Au
-# useAu = ['04', '06', '07', '10', '17', '25', '45']
-useAu = 'Full'
+useAu = ['04', '06', '07', '10', '17', '25', '45']
+# useAu = 'Full'
 
 # choose Au Model
 # useModel = 'C'
 useModel = 'R'
 # useModel = 'mix'
 
+# choose featureScal
+# featureScal = None
+# featureScal = 'MinMaxScaler'
+# featureScal = 'L2Normalization'
+featureScal = 'StandardScaler'
+# featureScal = 'ZeroCentered'
+
 # choose pretreatmentMethod
-preMethod = None
+# preMethod = None
 # preMethod = 'average'
 # preMethod = 'highMapping'
 # preMethod = 'highMappingV2'
-# preMethod = 'max'
+preMethod = 'max'
 # preMethod = 'maxAverage'
 # preMethod = 'maxAverageMin'
 
 # choose preParameter
-preParameter = 150
+preParameter = 5
 
 # Hyper parameter
 modelParameters = {
     'criterion': 'gini',
-    'n_estimators': 200,
-    'max_depth': 40,
+    'n_estimators': 5,
+    'max_depth': 3,
     'min_samples_leaf': 2,
     'min_samples_split': 2,
     'random_state': 42
@@ -51,8 +61,8 @@ useForTrainSet = [1, 2, 3, 5]
 useForTestSet = [4]
 
 # Frame Open Set
-useFrameOpenMode = True
-# useFrameOpenMode = False
+# useFrameOpenMode = True
+useFrameOpenMode = False
 
 # Frame Open Parameter
 frameOpenSet = [1, 2, 3, 4, 5]
@@ -111,15 +121,25 @@ def concatDF(Set, newDataSet):
     return Set
 
 
-def Normalized(SampleData):
+def FeatureScal(SampleData):
     dataNoLabel = SampleData.drop('label', axis=1)
     dataLabel = SampleData['label']
-    # has [divide by zero errors]
-    # minMaxNormalized = (dataNoLabel - dataNoLabel.min()) / (dataNoLabel.max() - dataNoLabel.min())
+    scalData = None
+    if featureScal is None:
+        return SampleData
+    elif featureScal == 'MinMaxScaler':
+        # has [divide by zero errors]
+        # scalData = (dataNoLabel - dataNoLabel.min()) / (dataNoLabel.max() - dataNoLabel.min())
+        scalData = MinMaxScaler().fit_transform(dataNoLabel)
+    elif featureScal == 'StandardScaler':
+        scalData = StandardScaler().fit_transform(dataNoLabel)
+    elif featureScal == 'L2Normalization':
+        scalData = Normalizer().fit_transform(dataNoLabel)
+    elif featureScal == 'ZeroCentered':
+        scalData = dataNoLabel - dataNoLabel.mean()
 
-    minMaxNormalized = pd.DataFrame(MinMaxScaler().fit_transform(dataNoLabel), columns=dataNoLabel.columns,
-                                    index=dataNoLabel.index)
-    SampleData = pd.concat([minMaxNormalized, dataLabel], axis=1)
+    scalData = pd.DataFrame(scalData, columns=dataNoLabel.columns, index=dataNoLabel.index)
+    SampleData = pd.concat([scalData, dataLabel], axis=1)
     return SampleData
 
 
@@ -132,46 +152,54 @@ def LoadSet(GroupPath, AuParameter):
         fileList = os.listdir(samplePath)
         sampleSet = None
         splitPointList = [0]
+        splitPoint = 0
         for file in fileList:
             if os.path.splitext(file)[1] == '.csv' and "mix" in os.path.splitext(file)[0]:
                 csvPath = samplePath + '/' + file
                 data = pd.read_csv(csvPath)[AuParameter]
-                splitPointList.append(data.shape[0])
+                splitPoint += data.shape[0]
+                splitPointList.append(splitPoint)
                 sampleSet = concatDF(sampleSet, data)
-        sampleSet = Normalized(sampleSet)
+        sampleSet = FeatureScal(sampleSet)
         for i in range(len(splitPointList) - 1):
-            sampleList.append(sampleSet[splitPointList[i]:splitPointList[i] + splitPointList[i + 1]])
+            sampleList.append(sampleSet[splitPointList[i]:splitPointList[i + 1]])
 
     return sampleList
 
 
 def concatByGroup(GroupPath, AuParameter):
+    sampleList = LoadSet(GroupPath, AuParameter)
     dataSet = None
 
-    folderList = [folder for folder in os.listdir(GroupPath) if os.path.isdir(os.path.join(GroupPath, folder))]
-    for folder in folderList:
-        samplePath = GroupPath + folder
-        fileList = os.listdir(samplePath)
-        for file in fileList:
-            if os.path.splitext(file)[1] == '.csv' and "mix" in os.path.splitext(file)[0]:
-                csvPath = samplePath + '/' + file
-                data = pd.read_csv(csvPath)[AuParameter]
-                # Use pretreatmentMethod
-                if preMethod == 'average':
-                    data = PreAverage(data)
-                elif preMethod == 'highMapping':
-                    data = PreHighMapping(data)
-                elif preMethod == 'max':
-                    data = PreMax(data)
-                elif preMethod == 'maxAverage':
-                    data = PreMaxAverage(data)
-                elif preMethod == 'maxAverageMin':
-                    data = PreMaxAverageMin(data)
-                dataSet = concatDF(dataSet, data)
-                print('folder:{0},size:{1},SetSize:{2}'.format(csvPath, data.shape, dataSet.shape))
-    print('GroupPath:{0},Total Size:{1}'.format(GroupPath, dataSet.shape))
-
+    for sample in sampleList:
+        data = sample.reset_index(drop=True)
+        if preMethod == 'average':
+            data = PreAverage(data)
+        elif preMethod == 'highMapping':
+            data = PreHighMapping(data)
+        elif preMethod == 'max':
+            data = PreMax(data)
+        elif preMethod == 'maxAverage':
+            data = PreMaxAverage(data)
+        elif preMethod == 'maxAverageMin':
+            data = PreMaxAverageMin(data)
+        elif preMethod == 'highMappingV2':
+            data = PreHighMappingV2(data)
+        dataSet = concatDF(dataSet, data)
+        dataSetCheck = dataSet[dataSet.isnull().T.any()]
+        if not dataSetCheck.empty:
+            print('warning')
+    print('GroupPath:{0},Total Size:{1}\n'
+          'Label Distribution:{2}\n'.format(GroupPath, dataSet.shape, GetLabelDistribution(dataSet)))
     return dataSet
+
+
+def GetLabelDistribution(dataset):
+    labelMask = np.unique(dataset['label'].values)
+    labelDistribution = []
+    for v in labelMask:
+        labelDistribution.append(np.sum(dataset['label'].values == v))
+    return labelDistribution
 
 
 def GeneralTTSetByGroup(GroupPath, AuParameter):
@@ -180,7 +208,8 @@ def GeneralTTSetByGroup(GroupPath, AuParameter):
     TestSet = None
 
     for sample in sampleList:
-        data = sample
+        index = 1
+        data = sample.reset_index(drop=True)
         if preMethod == 'average':
             data = PreAverage(data)
         elif preMethod == 'highMapping':
@@ -205,7 +234,20 @@ def GeneralTTSetByGroup(GroupPath, AuParameter):
             testData = data[-data.shape[0] * splitRate[2] // 10:]
         TrainSet = concatDF(TrainSet, trainData)
         TestSet = concatDF(TestSet, testData)
-    print('GroupPath:{0},Train Size:{1},Test Size:{2}'.format(GroupPath, TrainSet.shape, TestSet.shape))
+
+        # Check if there is a NAN value
+        TrainSetCheck = TrainSet[TrainSet.isnull().T.any()]
+        TestSetCheck = TestSet[TestSet.isnull().T.any()]
+        if not TrainSetCheck.empty:
+            print('warning')
+        if not TestSetCheck.empty:
+            print("warning")
+
+    print('GroupPath:{0},Train Size:{1},Test Size:{2}\n'
+          'Train Label Distribution:{3}\n'
+          'Test Label Distribution:{4}'.format(GroupPath, TrainSet.shape, TestSet.shape, GetLabelDistribution(TrainSet),
+                                               GetLabelDistribution(TestSet)))
+
     return TrainSet, TestSet
 
 
@@ -448,7 +490,7 @@ def Train(train, test):
                                  min_samples_leaf=modelParameters.get('min_samples_leaf'),
                                  min_samples_split=modelParameters.get('min_samples_split'),
                                  n_estimators=modelParameters.get('n_estimators'),
-                                 random_state=modelParameters.get('random_state'))
+                                 random_state=modelParameters.get('random_state'), n_jobs=-2)
 
     print('Start Training ' + useModel + ' Model')
     start = time.time()
@@ -465,6 +507,7 @@ def Train(train, test):
     print(msg)
     if useEchoBot:
         EchoBot.SendMsgToTelegram(msg)
+    # print(confusion_matrix(train_Y, RFC.predict(train_X)))
     DrawConfusionMatrix(RFC, test_X, test_Y, label=['0', '5', '10'])
 
     return RFC
@@ -554,6 +597,8 @@ def DrawConfusionMatrix(model, test_X, test_Y, label):
     cm = confusion_matrix(test_Y, Y_pred)
     cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
 
+    print(cm)
+    print(accuracy_score(test_Y, Y_pred))
     sns.heatmap(cm_normalized, annot=True, cmap=plt.cm.binary, xticklabels=label, yticklabels=label,
                 annot_kws={"fontsize": 12})
 
@@ -570,6 +615,8 @@ def DrawConfusionMatrix(model, test_X, test_Y, label):
         EchoBot.SendPlotToTelegram(plt)
     if useFrameOpenMode:
         plt.savefig(outPath + 'tmp_{0}.png'.format(splitMethod))
+    else:
+        plt.savefig(outPath + 'tmp_human.png')
     # plt.show()
 
 
@@ -588,13 +635,16 @@ if __name__ == "__main__":
             trainSet, testSet = GeneralTTSet()
             print('UseAu:{0}\n'
                   'UseModel:{1}\n'
-                  'PreMethod:{2}\n'
-                  'PreParameter:{3}\n'
-                  'FrameOpenMode:{4}\n'
-                  'SplitMethod:{5}'.format(useAu, useModel, preMethod, preParameter, useFrameOpenMode, splitMethod))
+                  'FeatureScal:{2}\n'
+                  'PreMethod:{3}\n'
+                  'PreParameter:{4}\n'
+                  'FrameOpenMode:{5}\n'
+                  'SplitMethod:{6}'.format(useAu, useModel, featureScal, preMethod, preParameter, useFrameOpenMode,
+                                           splitMethod))
             print('trainSet:{0},testSet:{1}'.format(trainSet.shape, testSet.shape))
             trainModel = Train(trainSet, testSet)
-            predictSet = Predict(trainModel, testSet)
+            # trainModel = TrainByGVSearch(trainSet, testSet)
+            # predictSet = Predict(trainModel, testSet)
     else:
         trainSet, testSet = GeneralTTSet()
 
@@ -613,6 +663,6 @@ if __name__ == "__main__":
         # trainModel = TrainByGVSearch(trainSet, testSet)
 
         # OutPredict
-        predictSet = Predict(trainModel, testSet)
+        # predictSet = Predict(trainModel, testSet)
     if dumpModel:
         SaveModel(trainModel)
