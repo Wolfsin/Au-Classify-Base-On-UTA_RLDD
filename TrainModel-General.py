@@ -19,8 +19,8 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
 
 # choose Used Au
-useAu = ['04', '06', '07', '10', '17', '25', '45']
-# useAu = 'Full'
+# useAu = ['04', '06', '07', '10', '17', '25', '45']
+useAu = 'Full'
 
 # choose Au Model
 # useModel = 'C'
@@ -34,12 +34,25 @@ useModel = 'R'
 featureScal = 'StandardScaler'
 # featureScal = 'ZeroCentered'
 
+'''
+featureScal Model
+AllIn = (A-0 + A-5 + A-10).mean
+0TrainOnly = (A-0-train).mean
+AllInTrainOnly = (A-0-train + A-5-train + A-10-train).mean
+EachAverage = A-0-train.mean; A-5-train.mean; A-10-train.mean
+'''
+# featureScalModel = None
+# featureScalModel = 'AllIn'
+# featureScalModel = '0TrainOnly'
+# featureScalModel = 'AllTrainOnly'
+featureScalModel = 'EachAverage'
+
 # choose pretreatmentMethod
-# preMethod = None
+preMethod = None
 # preMethod = 'average'
 # preMethod = 'highMapping'
 # preMethod = 'highMappingV2'
-preMethod = 'max'
+# preMethod = 'max'
 # preMethod = 'maxAverage'
 # preMethod = 'maxAverageMin'
 
@@ -49,8 +62,8 @@ preParameter = 5
 # Hyper parameter
 modelParameters = {
     'criterion': 'gini',
-    'n_estimators': 5,
-    'max_depth': 3,
+    'n_estimators': 200,
+    'max_depth': 40,
     'min_samples_leaf': 2,
     'min_samples_split': 2,
     'random_state': 42
@@ -61,8 +74,8 @@ useForTrainSet = [1, 2, 3, 5]
 useForTestSet = [4]
 
 # Frame Open Set
-# useFrameOpenMode = True
-useFrameOpenMode = False
+useFrameOpenMode = True
+# useFrameOpenMode = False
 
 # Frame Open Parameter
 frameOpenSet = [1, 2, 3, 4, 5]
@@ -121,10 +134,12 @@ def concatDF(Set, newDataSet):
     return Set
 
 
-def FeatureScal(SampleData):
+def FeatureScal(SampleData,TestDataFlag=False):
     dataNoLabel = SampleData.drop('label', axis=1)
     dataLabel = SampleData['label']
     scalData = None
+    global Scaler
+
     if featureScal is None:
         return SampleData
     elif featureScal == 'MinMaxScaler':
@@ -132,7 +147,11 @@ def FeatureScal(SampleData):
         # scalData = (dataNoLabel - dataNoLabel.min()) / (dataNoLabel.max() - dataNoLabel.min())
         scalData = MinMaxScaler().fit_transform(dataNoLabel)
     elif featureScal == 'StandardScaler':
-        scalData = StandardScaler().fit_transform(dataNoLabel)
+        if TestDataFlag:
+            scalData = Scaler.transform(dataNoLabel)
+        else:
+            Scaler = StandardScaler()
+            scalData = Scaler.fit_transform(dataNoLabel)
     elif featureScal == 'L2Normalization':
         scalData = Normalizer().fit_transform(dataNoLabel)
     elif featureScal == 'ZeroCentered':
@@ -141,6 +160,39 @@ def FeatureScal(SampleData):
     scalData = pd.DataFrame(scalData, columns=dataNoLabel.columns, index=dataNoLabel.index)
     SampleData = pd.concat([scalData, dataLabel], axis=1)
     return SampleData
+
+
+def FeatureScalByTT(TrainData, TestData):
+    trainDataNoLabel = TrainData.drop('label', axis=1)
+    testDataNoLabel = TestData.drop('label', axis=1)
+    if featureScal == 'ZeroCentered':
+        TrainData = pd.concat([trainDataNoLabel - trainDataNoLabel.mean(), TrainData['label']], axis=1)
+        TestData = pd.concat([testDataNoLabel - trainDataNoLabel.mean(), TestData['label']], axis=1)
+    return TrainData, TestData
+
+
+def FeatureScalByParameter(**kwargs):
+    """
+    FeatureScalByParameter(TrainData, TestData, Parameter)
+    or
+    FeatureScalByParameter(SampleData, Parameter)
+    """
+    if len(kwargs) == 3:
+        trainDataNoLabel = kwargs['TrainData'].drop('label', axis=1)
+        testDataNoLabel = kwargs['TestData'].drop('label', axis=1)
+        Parameter = kwargs['Parameter']
+        if featureScal == 'ZeroCentered':
+            TrainData = pd.concat([trainDataNoLabel - Parameter, kwargs['TrainData']['label']], axis=1)
+            TestData = pd.concat([testDataNoLabel - Parameter, kwargs['TestData']['label']], axis=1)
+        return TrainData, TestData
+    elif len(kwargs) == 2:
+        dataNoLabel = kwargs['SampleData'].drop('label', axis=1)
+        Parameter = kwargs['Parameter']
+        if featureScal == 'ZeroCentered':
+            SampleData = pd.concat([dataNoLabel - Parameter, kwargs['SampleData']['label']], axis=1)
+        return SampleData
+    else:
+        print('Error: FeatureScalByParameter')
 
 
 def LoadSet(GroupPath, AuParameter):
@@ -157,10 +209,21 @@ def LoadSet(GroupPath, AuParameter):
             if os.path.splitext(file)[1] == '.csv' and "mix" in os.path.splitext(file)[0]:
                 csvPath = samplePath + '/' + file
                 data = pd.read_csv(csvPath)[AuParameter]
+                # if '0' in os.path.splitext(file)[0] and '10' not in os.path.splitext(file)[0]:
+                #     zero = data.drop('label', axis=1).mean()
+                #     data = FeatureScalByParameter(SampleData=data, Parameter=zero)
+                # elif '5' in os.path.splitext(file)[0]:
+                #     five = data.drop('label', axis=1).mean()
+                #     data = FeatureScalByParameter(SampleData=data, Parameter=five)
+                # elif '10' in os.path.splitext(file)[0]:
+                #     ten = data.drop('label', axis=1).mean()
+                #     data = FeatureScalByParameter(SampleData=data, Parameter=ten)
                 splitPoint += data.shape[0]
                 splitPointList.append(splitPoint)
                 sampleSet = concatDF(sampleSet, data)
-        sampleSet = FeatureScal(sampleSet)
+        if featureScalModel == 'AllIn':
+            sampleSet = FeatureScal(sampleSet)
+
         for i in range(len(splitPointList) - 1):
             sampleList.append(sampleSet[splitPointList[i]:splitPointList[i + 1]])
 
@@ -185,10 +248,51 @@ def concatByGroup(GroupPath, AuParameter):
             data = PreMaxAverageMin(data)
         elif preMethod == 'highMappingV2':
             data = PreHighMappingV2(data)
+        if featureScalModel == 'EachAverage':
+                data = FeatureScal(data)
         dataSet = concatDF(dataSet, data)
         dataSetCheck = dataSet[dataSet.isnull().T.any()]
         if not dataSetCheck.empty:
             print('warning')
+    print('GroupPath:{0},Total Size:{1}\n'
+          'Label Distribution:{2}\n'.format(GroupPath, dataSet.shape, GetLabelDistribution(dataSet)))
+    return dataSet
+
+
+def concatByHumanUnits(GroupPath, AuParameter):
+    sampleList = LoadSet(GroupPath, AuParameter)
+    tempDataSet = None
+    dataSet = None
+
+    for index, sample in enumerate(sampleList):
+        data = sample.reset_index(drop=True)
+        if preMethod == 'average':
+            data = PreAverage(data)
+        elif preMethod == 'highMapping':
+            data = PreHighMapping(data)
+        elif preMethod == 'max':
+            data = PreMax(data)
+        elif preMethod == 'maxAverage':
+            data = PreMaxAverage(data)
+        elif preMethod == 'maxAverageMin':
+            data = PreMaxAverageMin(data)
+        elif preMethod == 'highMappingV2':
+            data = PreHighMappingV2(data)
+        tempDataSet = concatDF(tempDataSet, data)
+
+        if featureScalModel == '0TrainOnly' and index % 3 == 0:
+            zeroCenterParameterFor0Label = tempDataSet.drop('label', axis=1).mean()
+
+        # Treat in human units.
+        if (index + 1) % 3 == 0:
+            if featureScalModel == '0TrainOnly':
+                tempDataSet = FeatureScalByParameter(SampleData=tempDataSet, Parameter=zeroCenterParameterFor0Label)
+            # Check if there is a NAN value
+            if not tempDataSet[tempDataSet.isnull().T.any()].empty:
+                print('warning')
+            dataSet = concatDF(tempDataSet, dataSet)
+            tempDataSet = None
+
     print('GroupPath:{0},Total Size:{1}\n'
           'Label Distribution:{2}\n'.format(GroupPath, dataSet.shape, GetLabelDistribution(dataSet)))
     return dataSet
@@ -208,7 +312,65 @@ def GeneralTTSetByGroup(GroupPath, AuParameter):
     TestSet = None
 
     for sample in sampleList:
-        index = 1
+        data = sample.reset_index(drop=True)
+        if preMethod == 'average':
+            data = PreAverage(data)
+        elif preMethod == 'highMapping':
+            data = PreHighMapping(data)
+        elif preMethod == 'max':
+            data = PreMax(data)
+        elif preMethod == 'maxAverage':
+            data = PreMaxAverage(data)
+        elif preMethod == 'maxAverageMin':
+            data = PreMaxAverageMin(data)
+        elif preMethod == 'highMappingV2':
+            data = PreHighMappingV2(data)
+
+        if splitMethod == 'positive':
+            trainData = data[:data.shape[0] * splitRate[0] // 10]
+            testData = data[-data.shape[0] * splitRate[2] // 10:]
+        elif splitMethod == 'reverse':
+            trainData = data[-data.shape[0] * splitRate[0] // 10:]
+            testData = data[:data.shape[0] * splitRate[2] // 10]
+        elif splitMethod == 'random':
+            data = data.sample(frac=1, random_state=42)
+            trainData = data[:data.shape[0] * splitRate[0] // 10]
+            testData = data[-data.shape[0] * splitRate[2] // 10:]
+
+        if featureScalModel == 'EachAverage':
+            if featureScal == 'ZeroCentered':
+                trainData = FeatureScalByParameter(SampleData=trainData, Parameter=trainData.drop('label', axis=1).mean())
+                testData = FeatureScalByParameter(SampleData=testData, Parameter=trainData.drop('label', axis=1).mean())
+            elif featureScal == 'StandardScaler':
+                trainData = FeatureScal(trainData)
+                testData = FeatureScal(testData,True)
+
+        # Check if there is a NAN value
+        if not trainData[trainData.isnull().T.any()].empty:
+            print('warning')
+        if not testData[testData.isnull().T.any()].empty:
+            print("warning")
+
+        TrainSet = concatDF(TrainSet, trainData)
+        TestSet = concatDF(TestSet, testData)
+
+    print('GroupPath:{0},Train Size:{1},Test Size:{2}\n'
+          'Train Label Distribution:{3}\n'
+          'Test Label Distribution:{4}'.format(GroupPath, TrainSet.shape, TestSet.shape, GetLabelDistribution(TrainSet),
+                                               GetLabelDistribution(TestSet)))
+
+    return TrainSet, TestSet
+
+
+def GeneralTTSetByHumanUnits(GroupPath, AuParameter):
+    sampleList = LoadSet(GroupPath, AuParameter)
+    tempTrain = None
+    tempTest = None
+    TrainSet = None
+    TestSet = None
+    zeroCenterParameterFor0Label = None
+
+    for index, sample in enumerate(sampleList):
         data = sample.reset_index(drop=True)
         if preMethod == 'average':
             data = PreAverage(data)
@@ -232,16 +394,31 @@ def GeneralTTSetByGroup(GroupPath, AuParameter):
             data = data.sample(frac=1, random_state=42)
             trainData = data[:data.shape[0] * splitRate[0] // 10]
             testData = data[-data.shape[0] * splitRate[2] // 10:]
-        TrainSet = concatDF(TrainSet, trainData)
-        TestSet = concatDF(TestSet, testData)
 
-        # Check if there is a NAN value
-        TrainSetCheck = TrainSet[TrainSet.isnull().T.any()]
-        TestSetCheck = TestSet[TestSet.isnull().T.any()]
-        if not TrainSetCheck.empty:
-            print('warning')
-        if not TestSetCheck.empty:
-            print("warning")
+        tempTrain = concatDF(tempTrain, trainData)
+        tempTest = concatDF(tempTest, testData)
+
+        if featureScalModel == '0TrainOnly' and index % 3 == 0:
+            zeroCenterParameterFor0Label = tempTrain.drop('label', axis=1).mean()
+            # zeroCenterParameterFor0Label = data.drop('label', axis=1).mean()
+
+        # Treat in human units.
+        if (index + 1) % 3 == 0:
+            if featureScalModel == 'AllTrainOnly':
+                tempTrain, tempTest = FeatureScalByTT(tempTrain, tempTest)
+            elif featureScalModel == '0TrainOnly':
+                tempTrain, tempTest = FeatureScalByParameter(TrainData=tempTrain, TestData=tempTest,
+                                                             Parameter=zeroCenterParameterFor0Label)
+            # Check if there is a NAN value
+            if not tempTrain[tempTrain.isnull().T.any()].empty:
+                print('warning')
+            if not tempTest[tempTest.isnull().T.any()].empty:
+                print("warning")
+
+            TrainSet = concatDF(TrainSet, tempTrain)
+            TestSet = concatDF(TestSet, tempTest)
+            tempTrain = None
+            tempTest = None
 
     print('GroupPath:{0},Train Size:{1},Test Size:{2}\n'
           'Train Label Distribution:{3}\n'
@@ -570,7 +747,10 @@ def GeneralTTSet():
     if useFrameOpenMode:
         useGroup = frameOpenSet
         for i in tqdm(useGroup):
-            TrainData, TestData = GeneralTTSetByGroup(path.format(i), parameter)
+            if featureScalModel == 'AllIn' or featureScalModel == 'EachAverage':
+                TrainData, TestData = GeneralTTSetByGroup(path.format(i), parameter)
+            else:
+                TrainData, TestData = GeneralTTSetByHumanUnits(path.format(i), parameter)
             TrainSet.append(TrainData)
             TestSet.append(TestData)
         TrainSet = pd.concat(TrainSet, ignore_index=True)
@@ -578,7 +758,10 @@ def GeneralTTSet():
     else:
         useGroup = useForTrainSet + useForTestSet
         for i in tqdm(useGroup):
-            groupSet = concatByGroup(path.format(i), parameter)
+            if featureScalModel == '0TrainOnly':
+                groupSet = concatByHumanUnits(path.format(i), parameter)
+            else:
+                groupSet = concatByGroup(path.format(i), parameter)
             if i in useForTrainSet:
                 TrainSet.append(groupSet)
             if i in useForTestSet:
@@ -630,6 +813,7 @@ def SaveModel(model):
 
 
 if __name__ == "__main__":
+    Scaler = None
     if useFrameOpenMode:
         for splitMethod in ['positive', 'reverse', 'random']:
             trainSet, testSet = GeneralTTSet()
@@ -646,6 +830,8 @@ if __name__ == "__main__":
             # trainModel = TrainByGVSearch(trainSet, testSet)
             # predictSet = Predict(trainModel, testSet)
     else:
+        if featureScalModel == 'AllTrainOnly' or featureScalModel == 'AllIn':
+            featureScalModel = 'AllIn'
         trainSet, testSet = GeneralTTSet()
 
         # trainSet.to_csv(outPath + 'train.csv')
