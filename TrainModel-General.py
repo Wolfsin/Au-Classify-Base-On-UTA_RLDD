@@ -90,6 +90,10 @@ useEchoBot = False
 # dumpModel = True
 dumpModel = False
 
+# RandomForest Importance
+outImportance = False
+# outImportance = True
+
 # set Path
 path = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Group{0}/"
 outPath = r"D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/"
@@ -249,7 +253,7 @@ def concatByGroup(GroupPath, AuParameter):
         elif preMethod == 'highMappingV2':
             data = PreHighMappingV2(data)
         if featureScalModel == 'EachAverage':
-                data = FeatureScal(data)
+            data = FeatureScal(data)
         dataSet = concatDF(dataSet, data)
         dataSetCheck = dataSet[dataSet.isnull().T.any()]
         if not dataSetCheck.empty:
@@ -686,6 +690,8 @@ def Train(train, test):
         EchoBot.SendMsgToTelegram(msg)
     # print(confusion_matrix(train_Y, RFC.predict(train_X)))
     DrawConfusionMatrix(RFC, test_X, test_Y, label=['0', '5', '10'])
+    if outImportance:
+        OutputImportance(RFC)
 
     return RFC
 
@@ -810,6 +816,13 @@ def SaveModel(model):
                                                     useForTestSet)
     print("out model in:" + modelPath + fileName)
     joblib.dump(model, modelPath + fileName)
+
+
+def OutputImportance(model):
+    variable = PickUpParameter()
+    fileName = outPath + 'model_importance.csv'
+    importance = pd.DataFrame({'variable': variable, 'Importance': model.feature_importances_})
+    importance.to_csv(fileName, index=False)
 
 
 if __name__ == "__main__":
