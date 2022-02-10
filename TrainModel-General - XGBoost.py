@@ -15,10 +15,11 @@ from sklearn.preprocessing import Normalizer
 from sklearn.preprocessing import StandardScaler
 from pandas.testing import assert_frame_equal
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
+from xgboost.sklearn import XGBClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
+import xgboost as xgb
 
 # choose Used Au
 # useAu = ['04', '06', '07', '10', '17', '25', '45']
@@ -30,10 +31,10 @@ useModel = 'R'
 # useModel = 'mix'
 
 # choose featureScal
-# featureScal = None
+featureScal = None
 # featureScal = 'MinMaxScaler'
 # featureScal = 'L2Normalization'
-featureScal = 'StandardScaler'
+# featureScal = 'StandardScaler'
 # featureScal = 'ZeroCentered'
 
 '''
@@ -43,8 +44,8 @@ AllIn = (A-0 + A-5 + A-10).mean
 AllInTrainOnly = (A-0-train + A-5-train + A-10-train).mean
 EachAverage = A-0-train.mean; A-5-train.mean; A-10-train.mean
 '''
-# featureScalModel = None
-featureScalModel = 'AllIn'
+featureScalModel = None
+# featureScalModel = 'AllIn'
 # featureScalModel = '0TrainOnly'
 # featureScalModel = 'AllTrainOnly'
 # featureScalModel = 'EachAverage'
@@ -63,11 +64,13 @@ preParameter = 5
 
 # Hyper parameter
 modelParameters = {
-    'criterion': 'gini',
+    'learning_rate': 0.1,
+    'max_depth': 18,
+    'gamma': 0,
+    'min_child_weight': 1,
     'n_estimators': 200,
-    'max_depth': 40,
-    'min_samples_leaf': 2,
-    'min_samples_split': 2,
+    'subsample': 1,
+    'colsample_bytree': 1,
     'random_state': 42
 }
 
@@ -87,9 +90,13 @@ splitRate = [7, 2, 1]
 useEchoBot = False
 # useEchoBot = True
 
+# GridSearch
+# isGridSearch = False
+isGridSearch = True
+
 # Persistence
-dumpModel = True
-# dumpModel = False
+# dumpModel = True
+dumpModel = False
 
 # RandomForest Importance
 outImportance = False
@@ -139,7 +146,7 @@ def concatDF(Set, newDataSet):
     return Set
 
 
-def FeatureScal(SampleData,TestDataFlag=False):
+def FeatureScal(SampleData, TestDataFlag=False):
     dataNoLabel = SampleData.drop('label', axis=1)
     dataLabel = SampleData['label']
     scalData = None
@@ -173,9 +180,6 @@ def FeatureScalByTT(TrainData, TestData):
     if featureScal == 'ZeroCentered':
         TrainData = pd.concat([trainDataNoLabel - trainDataNoLabel.mean(), TrainData['label']], axis=1)
         TestData = pd.concat([testDataNoLabel - trainDataNoLabel.mean(), TestData['label']], axis=1)
-    elif featureScal == 'StandardScaler':
-        TrainData = FeatureScal(TrainData)
-        TestData = FeatureScal(TestData,True)
     return TrainData, TestData
 
 
@@ -192,15 +196,6 @@ def FeatureScalByParameter(**kwargs):
         if featureScal == 'ZeroCentered':
             TrainData = pd.concat([trainDataNoLabel - Parameter, kwargs['TrainData']['label']], axis=1)
             TestData = pd.concat([testDataNoLabel - Parameter, kwargs['TestData']['label']], axis=1)
-        elif featureScal == 'StandardScaler':
-            scaler = StandardScaler()
-            scaler.fit_transform(Parameter)
-            TrainData = scaler.transform(trainDataNoLabel)
-            TestData = scaler.transform(testDataNoLabel)
-            TrainData = pd.DataFrame(TrainData, columns=trainDataNoLabel.columns, index=trainDataNoLabel.index)
-            TestData = pd.DataFrame(TestData, columns=testDataNoLabel.columns, index=testDataNoLabel.index)
-            TrainData = pd.concat([TrainData, kwargs['TrainData']['label']], axis=1)
-            TestData = pd.concat([TestData, kwargs['TestData']['label']], axis=1)
         return TrainData, TestData
     elif len(kwargs) == 2:
         dataNoLabel = kwargs['SampleData'].drop('label', axis=1)
@@ -217,10 +212,6 @@ def LoadSet(GroupPath, AuParameter):
 
     folderList = [folder for folder in os.listdir(GroupPath) if os.path.isdir(os.path.join(GroupPath, folder))]
     for folder in folderList:
-        if GroupPath == 'D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Group4/':
-            if folder != '41':
-                continue
-
         samplePath = GroupPath + folder
         fileList = os.listdir(samplePath)
         sampleSet = None
@@ -367,11 +358,12 @@ def GeneralTTSetByGroup(GroupPath, AuParameter):
 
         if featureScalModel == 'EachAverage':
             if featureScal == 'ZeroCentered':
-                trainData = FeatureScalByParameter(SampleData=trainData, Parameter=trainData.drop('label', axis=1).mean())
+                trainData = FeatureScalByParameter(SampleData=trainData,
+                                                   Parameter=trainData.drop('label', axis=1).mean())
                 testData = FeatureScalByParameter(SampleData=testData, Parameter=trainData.drop('label', axis=1).mean())
             elif featureScal == 'StandardScaler':
                 trainData = FeatureScal(trainData)
-                testData = FeatureScal(testData)
+                testData = FeatureScal(testData, True)
 
         # Check if there is a NAN value
         if not trainData[trainData.isnull().T.any()].empty:
@@ -427,8 +419,7 @@ def GeneralTTSetByHumanUnits(GroupPath, AuParameter):
         tempTest = concatDF(tempTest, testData)
 
         if featureScalModel == '0TrainOnly' and index % 3 == 0:
-            # zeroCenterParameterFor0Label = tempTrain.drop('label', axis=1).mean()
-            zeroCenterParameterFor0Label = tempTrain.drop('label', axis=1)
+            zeroCenterParameterFor0Label = tempTrain.drop('label', axis=1).mean()
             # zeroCenterParameterFor0Label = data.drop('label', axis=1).mean()
 
         # Treat in human units.
@@ -692,16 +683,16 @@ def Train(train, test):
     train_X, train_Y = DatasetToParameter(train)
     test_X, test_Y = DatasetToParameter(test)
 
-    RFC = RandomForestClassifier(criterion=modelParameters.get('criterion'), max_depth=modelParameters.get('max_depth'),
-                                 min_samples_leaf=modelParameters.get('min_samples_leaf'),
-                                 min_samples_split=modelParameters.get('min_samples_split'),
-                                 n_estimators=modelParameters.get('n_estimators'),
-                                 random_state=modelParameters.get('random_state'), n_jobs=-2)
+    XGBC = XGBClassifier(learning_rate=modelParameters.get('learning_rate'), max_depth=modelParameters.get('max_depth'),
+                         gamma=modelParameters.get('gamma'), min_child_weight=modelParameters.get('min_child_weight'),
+                         n_estimators=modelParameters.get('n_estimators'),subsample=modelParameters.get('subsample'),
+                         colsample_bytree=modelParameters.get('colsample_bytree'),
+                         random_state=modelParameters.get('random_state'), n_jobs=-2, verbosity=3,
+                         tree_method='gpu_hist',gpu_id=0)
 
     print('Start Training ' + useModel + ' Model')
     start = time.time()
-    # RFC.fit(train_X, train_Y)
-    RFC = joblib.load('D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/model/FrameOpen/0125141612_R_None_5_[1, 2, 3, 5]_[4].pkl')
+    XGBC.fit(train_X, train_Y)
     end = time.time()
     nowTime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     template = '{0} \n' \
@@ -710,16 +701,16 @@ def Train(train, test):
                'testSet score: {3:.2%}\n' \
                'use Time:{4} \n' \
                'Complete training'
-    msg = template.format(nowTime, RFC, RFC.score(train_X, train_Y), RFC.score(test_X, test_Y), end - start)
+    msg = template.format(nowTime, XGBC, XGBC.score(train_X, train_Y), XGBC.score(test_X, test_Y), end - start)
     print(msg)
     if useEchoBot:
         EchoBot.SendMsgToTelegram(msg)
     # print(confusion_matrix(train_Y, RFC.predict(train_X)))
-    DrawConfusionMatrix(RFC, test_X, test_Y, label=['0', '5', '10'])
+    DrawConfusionMatrix(XGBC, test_X, test_Y, label=['0', '5', '10'])
     if outImportance:
-        OutputImportance(RFC, train_X, test_X)
+        OutputImportance(XGBC, train_X, test_X)
 
-    return RFC
+    return XGBC
 
 
 def TrainByGVSearch(train, test):
@@ -727,14 +718,21 @@ def TrainByGVSearch(train, test):
     test_X, test_Y = DatasetToParameter(test)
 
     # Hyper parameter
-    parameters = {
-        'n_estimators': [5, 10, 17, 18, 30, 35, 60, 100, 200],  # 决策树的数量
-        'max_depth': [3, 5, 8, 10, 20, 40, 50],  # 决策数的深度
-        'random_state': [42],
-        'min_samples_leaf': [2, 5, 10, 20, 50],  # 叶子节点最少的样本数
-        'min_samples_split': [2, 5, 10, 20, 50]  # 每个划分最少的样本数
+    cv_params = {'max_depth':[20]}
+    other_params = {
+        'learning_rate': 0.01,
+        'n_estimators': 100,
+        'max_depth': 10,
+        'min_child_weight': 1,
+        'random_state': 42,
+        'subsample': 1,
+        'colsample_bytree': 1,
+        'gamma': 0,
+        'tree_method': 'gpu_hist',
+        'gpu_id': 0
     }
-    CLF = GridSearchCV(estimator=RandomForestClassifier(), param_grid=parameters, cv=2, verbose=1, n_jobs=-1)
+    model = xgb.XGBClassifier(**other_params)
+    CLF = GridSearchCV(estimator=model, param_grid=cv_params, scoring='r2',cv=2, verbose=1, n_jobs=-5)
     print('Start Training ' + useModel + ' Model')
     start = time.time()
     CLF.fit(train_X, train_Y)
@@ -864,47 +862,62 @@ def OutputImportance(model, trainX=None, TestX=None):
 
 if __name__ == "__main__":
     Scaler = None
-    if useFrameOpenMode:
-        for splitMethod in ['positive', 'reverse', 'random']:
-            trainSet, testSet = GeneralTTSet()
-            print('UseAu:{0}\n'
-                  'UseModel:{1}\n'
-                  'FeatureScal:{2}\n'
-                  'PreMethod:{3}\n'
-                  'PreParameter:{4}\n'
-                  'FrameOpenMode:{5}\n'
-                  'SplitMethod:{6}'.format(useAu, useModel, featureScal, preMethod, preParameter, useFrameOpenMode,
-                                           splitMethod))
-            print('trainSet:{0},testSet:{1}'.format(trainSet.shape, testSet.shape))
-            trainSet.to_csv(outPath + 'train.csv',index=False)
-            testSet.to_csv(outPath + 'test.csv',index=False)
-            trainModel = Train(trainSet, testSet)
-            joblib.dump(trainModel, modelPath + 'RF_model.pkl')
-            # trainModel = TrainByGVSearch(trainSet, testSet)
-            # predictSet = Predict(trainModel, testSet)
+    if isGridSearch:
+        useForTrainSet = [1,2,3,5]
+        useForTestSet = [4]
+        if featureScalModel == 'AllTrainOnly' or featureScalModel == 'AllIn':
+            featureScalModel = 'AllIn'
+        trainSet, testSet = GeneralTTSet()
+        trainSet.to_csv(outPath + 'train.csv', index=False)
+        testSet.to_csv(outPath + 'test.csv', index=False)
+        print('UseAu:{0}\n'
+              'UseModel:{1}\n'
+              'PreMethod:{2}\n'
+              'PreParameter:{3}\n'
+              'FrameOpenMode:{4}'.format(useAu, useModel, preMethod, preParameter, useFrameOpenMode))
+        print('trainSet{0}:{1},testSet{2}:{3}'.format(useForTrainSet, trainSet.shape, useForTestSet, testSet.shape))
+        # trainModel = TrainByGVSearch(trainSet, testSet)
+        trainModel = Train(trainSet, testSet)
     else:
-        for useForTestSet in [4,2,3,1,5]:
-            useForTrainSet = useGroup.copy()
-            useForTrainSet.remove(useForTestSet)
-            useForTestSet = [useForTestSet]
-            if featureScalModel == 'AllTrainOnly' or featureScalModel == 'AllIn':
-                featureScalModel = 'AllIn'
-            trainSet, testSet = GeneralTTSet()
-            # trainSet.to_csv(outPath + 'train.csv')
-            # testSet.to_csv(outPath + 'test.csv')
+        if useFrameOpenMode:
+            for splitMethod in ['positive', 'reverse', 'random']:
+                trainSet, testSet = GeneralTTSet()
+                print('UseAu:{0}\n'
+                      'UseModel:{1}\n'
+                      'FeatureScal:{2}\n'
+                      'PreMethod:{3}\n'
+                      'PreParameter:{4}\n'
+                      'FrameOpenMode:{5}\n'
+                      'SplitMethod:{6}'.format(useAu, useModel, featureScal, preMethod, preParameter, useFrameOpenMode,
+                                               splitMethod))
+                print('trainSet:{0},testSet:{1}'.format(trainSet.shape, testSet.shape))
+                trainModel = Train(trainSet, testSet)
+                # trainModel = TrainByGVSearch(trainSet, testSet)
+                # predictSet = Predict(trainModel, testSet)
+        else:
+            for useForTestSet in [1, 2, 3, 4, 5]:
+                print('Start to train, use {0} as test set'.format(useForTestSet))
+                useForTrainSet = useGroup.copy()
+                useForTrainSet.remove(useForTestSet)
+                useForTestSet = [useForTestSet]
+                if featureScalModel == 'AllTrainOnly' or featureScalModel == 'AllIn':
+                    featureScalModel = 'AllIn'
+                trainSet, testSet = GeneralTTSet()
+                # trainSet.to_csv(outPath + 'train.csv')
+                # testSet.to_csv(outPath + 'test.csv')
 
-            print('UseAu:{0}\n'
-                  'UseModel:{1}\n'
-                  'PreMethod:{2}\n'
-                  'PreParameter:{3}\n'
-                  'FrameOpenMode:{4}'.format(useAu, useModel, preMethod, preParameter, useFrameOpenMode))
-            print('trainSet{0}:{1},testSet{2}:{3}'.format(useForTrainSet, trainSet.shape, useForTestSet, testSet.shape))
+                print('UseAu:{0}\n'
+                      'UseModel:{1}\n'
+                      'PreMethod:{2}\n'
+                      'PreParameter:{3}\n'
+                      'FrameOpenMode:{4}'.format(useAu, useModel, preMethod, preParameter, useFrameOpenMode))
+                print('trainSet{0}:{1},testSet{2}:{3}'.format(useForTrainSet, trainSet.shape, useForTestSet, testSet.shape))
 
-            # Training
-            trainModel = Train(trainSet, testSet)
-            # trainModel = TrainByGVSearch(trainSet, testSet)
+                # Training
+                trainModel = Train(trainSet, testSet)
+                # trainModel = TrainByGVSearch(trainSet, testSet)
 
-            # OutPredict
-            # predictSet = Predict(trainModel, testSet)
+                # OutPredict
+                # predictSet = Predict(trainModel, testSet)
             if dumpModel:
                 SaveModel(trainModel)
