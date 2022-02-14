@@ -2,9 +2,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-import shap
 
-import EchoBot
 import joblib
 import time
 import os
@@ -82,10 +80,6 @@ useFrameOpenMode = False
 frameOpenSet = [1, 2, 3, 4, 5]
 # [train,drop,test]
 splitRate = [7, 2, 1]
-
-# Send To Echo
-useEchoBot = False
-# useEchoBot = True
 
 # Persistence
 dumpModel = True
@@ -712,8 +706,6 @@ def Train(train, test):
                'Complete training'
     msg = template.format(nowTime, RFC, RFC.score(train_X, train_Y), RFC.score(test_X, test_Y), end - start)
     print(msg)
-    if useEchoBot:
-        EchoBot.SendMsgToTelegram(msg)
     # print(confusion_matrix(train_Y, RFC.predict(train_X)))
     DrawConfusionMatrix(RFC, test_X, test_Y, label=['0', '5', '10'])
     if outImportance:
@@ -751,8 +743,6 @@ def TrainByGVSearch(train, test):
     msg = template.format(nowTime, best_clf, CLF.best_params_, best_clf.score(train_X, train_Y),
                           best_clf.score(test_X, test_Y), end - start)
     print(msg)
-    if useEchoBot:
-        EchoBot.SendMsgToTelegram(msg)
     DrawConfusionMatrix(best_clf, test_X, test_Y, label=['0', '5', '10'])
 
     return best_clf
@@ -826,8 +816,6 @@ def DrawConfusionMatrix(model, test_X, test_Y, label):
 
     print('Confusion Matrix:')
     print(cm_normalized)
-    if useEchoBot:
-        EchoBot.SendPlotToTelegram(plt)
     if useFrameOpenMode:
         plt.savefig(outPath + 'tmp_{0}.png'.format(splitMethod))
     else:
@@ -852,12 +840,6 @@ def OutputImportance(model, trainX=None, TestX=None):
     fileName = outPath + 'model_importance.csv'
     importance = pd.DataFrame({'variable': variable, 'Importance': model.feature_importances_}).sort_values(
         by=['Importance'], ascending=False)
-
-    # explainer = shap.explainers.Tree(model)
-    # # The bigger the data set, the more it takes time
-    # shapValues = explainer.shap_values(trainX)
-    # shap.summary_plot(shapValues, trainX, show=False)
-    # plt.savefig(outPath + 'tmp_shap.png')
 
     importance.to_csv(fileName, index=False)
 
