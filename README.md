@@ -88,7 +88,7 @@ AUファイルへのパスの例:
 │  corrcoef.py （相関係数の計算）
 │  corrcoef_concat.py （相関係数の計算結果を統合）
 │  CreateFolder.py （最初のフォルダ構造を生成）
-│  dataTools.py （データのインポートと処理関連するモジュール、最終版は）
+│  dataTools.py （データのインポートと処理関連するモジュール、最終版は廃棄）
 │  GenerateTTSet.py （トレーニングセットとテストセットを生成、最終版は廃棄）
 │  GetAllSet.py （OpenFaceの出力csvファイルからAUのみのデータセットを取得）
 │  GetAverageSet.py （平均の前処理、最終版に統合済み）
