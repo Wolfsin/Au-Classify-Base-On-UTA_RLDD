@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 from keras.models import Sequential, load_model
 from keras.preprocessing.sequence import pad_sequences
-from keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam
 from keras.layers import Dense, Dropout, LSTM, Masking, TimeDistributed, Bidirectional, Reshape
 
 # Test data is fully independent.

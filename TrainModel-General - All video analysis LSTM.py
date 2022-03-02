@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 from keras.models import Sequential, load_model
 from keras.preprocessing.sequence import pad_sequences
-from keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam
 from keras.layers import Dense, Dropout, LSTM, Masking, TimeDistributed, Bidirectional, Reshape
 
 # Test data is fully independent.
@@ -225,23 +225,23 @@ def GenerateInputSet(Path=r'D:/UTA Real-Life Drowsiness Dataset AU Preprocessing
             TestList[index] = pad_sequences(sample, maxlen=900, padding="post", truncating="pre", value=-99, dtype='float32')
         testSet = np.array(TestList)
 
-    np.save(r'D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/trainSet.npy', trainSet)
-    np.save(r'D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/valSet.npy', valSet)
-    np.save(r'D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/testSet.npy', testSet)
+    # np.save(r'D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/trainSet.npy', trainSet)
+    # np.save(r'D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/valSet.npy', valSet)
+    # np.save(r'D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/Train&Test Set/testSet.npy', testSet)
 
     # testSet = np.array(TestList)
     # testSet = pad_sequences(testSet,maxlen=900, padding="post", truncating="pre", value=-1, dtype='float32')
     # valSet,testSet = train_test_split(testSet, test_size=0.5)
     # trainSet = paddedInputs
 
-    zhangTrain, zhangTest = LoadZHANGSet()
-    zhangTrain = pad_sequences(zhangTrain, maxlen=900, padding="post", truncating="pre", value=-99, dtype='float32')
-    zhangTest = pad_sequences(zhangTest, maxlen=900, padding="post", truncating="pre", value=-99, dtype='float32')
-    zhangVal, zhangTest = train_test_split(zhangTest, test_size=0.5, random_state=42)
+    # zhangTrain, zhangTest = LoadZHANGSet()
+    # zhangTrain = pad_sequences(zhangTrain, maxlen=900, padding="post", truncating="pre", value=-99, dtype='float32')
+    # zhangTest = pad_sequences(zhangTest, maxlen=900, padding="post", truncating="pre", value=-99, dtype='float32')
+    # zhangVal, zhangTest = train_test_split(zhangTest, test_size=0.5, random_state=42)
 
-    trainSet = np.concatenate((trainSet, zhangTrain), axis=0)
-    valSet = np.concatenate((valSet, zhangVal), axis=0)
-    testSet = zhangTest
+    # trainSet = np.concatenate((trainSet, zhangTrain), axis=0)
+    # valSet = np.concatenate((valSet, zhangVal), axis=0)
+    # testSet = zhangTest
     # Only use zhangData for train
     # trainSet = zhangTrain
 
