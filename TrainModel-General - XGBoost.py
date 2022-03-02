@@ -4,7 +4,6 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import shap
 
-import EchoBot
 import joblib
 import time
 import os
