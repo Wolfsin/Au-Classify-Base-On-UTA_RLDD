@@ -694,8 +694,8 @@ def Train(train, test):
 
     print('Start Training ' + useModel + ' Model')
     start = time.time()
-    # RFC.fit(train_X, train_Y)
-    RFC = joblib.load('D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/model/FrameOpen/0125141612_R_None_5_[1, 2, 3, 5]_[4].pkl')
+    RFC.fit(train_X, train_Y)
+    # RFC = joblib.load('D:/UTA Real-Life Drowsiness Dataset AU Preprocessing/model/FrameOpen/0125141612_R_None_5_[1, 2, 3, 5]_[4].pkl')
     end = time.time()
     nowTime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     template = '{0} \n' \
